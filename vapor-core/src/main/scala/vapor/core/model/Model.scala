@@ -20,41 +20,61 @@ package vapor.core.model
 
 import java.net.InetAddress
 
+import scala.concurrent.Future
+
 trait Environment {
   def name:String
-  def dataCenters:List[DataCenter]
+  def dataCenters:Future[List[DataCenter]]
 }
 
 trait DataCenter {
   def name:String
-  def applications:List[Application]
-  def application(name:String):Option[Application]
+  def applications:Future[List[Application]]
+  def application(name:String):Future[Application]
 }
 
 trait Application {
   def name:String
-  def clusters:List[Cluster]
+  def clusters:Future[List[Cluster]]
 }
 
 trait Cluster {
   def name:String
-  def scalingGroups:List[ScalingGroup]
+  def scalingGroups:Future[List[ScalingGroup]]
+  def loadBalancers:Future[List[LoadBalancer]]
 }
 
 trait ScalingGroup {
   def name:String
-  def instances:List[Instance]
+  def instances:Future[List[Instance]]
 }
 
 trait Instance {
-  def id:String
-  def hostname:String
-  def privateAddresses:List[InetAddress]
-  def publicAddresses:List[InetAddress]
+  def name:String
+  def hostname:Future[String]
+  def privateAddresses:Future[List[InetAddress]]
+  def publicAddresses:Future[List[InetAddress]]
+  def loadBalancers:Future[List[LoadBalancer]]
+  def loadBalancerState:Future[Map[String, LoadBalancerState.LoadBalancerState]]
 }
 
 trait LoadBalancer {
-  def id:String
-  def hostname:String
-  def addresses:List[InetAddress]
+  def name:String
+  def hostname:Future[String]
+  def addresses:Future[List[InetAddress]]
+  def instances:Future[List[Instance]]
+  def status:Future[Map[String, LoadBalancerState.LoadBalancerState]]
+}
+
+object LoadBalancerState extends Enumeration {
+  type LoadBalancerState = Value
+  val InService, OutOfService, NoLoadBalancer = Value
+
+  def apply(name:String): LoadBalancerState = {
+    name match {
+      case "InService" => InService
+      case "OutOfService" => OutOfService
+      case _ => NoLoadBalancer
+    }
+  }
 }

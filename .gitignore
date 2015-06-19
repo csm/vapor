@@ -2,3 +2,4 @@
 vapor-core/vapor-core.iml
 vapor-aws/vapor-aws.iml
 .idea
+target/
