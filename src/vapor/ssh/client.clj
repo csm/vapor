@@ -108,4 +108,6 @@
                 {:success true
                  :exit-status (.getExitStatus exec-channel)
                  :stdout (ByteStreams/toByteArray (.getInvertedOut exec-channel))
-                 :stderr (ByteStreams/toByteArray (.getInvertedErr exec-channel))}))))))
+                 :stderr (ByteStreams/toByteArray (.getInvertedErr exec-channel))})))
+        (>! (fn [r]
+              (.close exec-channel true))))))

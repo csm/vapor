@@ -97,8 +97,8 @@
         (listenable-future (pipe-async promise fun)))
 
       (>! [this fun]
-        (add-listener f fun)
-        f)
+        (add-listener promise fun)
+        promise)
 
       ISettableFuture
       (succeed [_ result] (.set promise result))
