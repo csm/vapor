@@ -9,6 +9,9 @@ import org.apache.sshd.client.future.AuthFuture;
 import org.apache.sshd.client.future.ConnectFuture;
 import org.apache.sshd.client.future.OpenFuture;
 import org.apache.sshd.common.future.CloseFuture;
+import org.apache.sshd.common.future.SshFuture;
+import org.apache.sshd.common.io.IoReadFuture;
+import org.apache.sshd.common.io.IoWriteFuture;
 
 /**
  * Created by cmarshall on 10/30/14.
@@ -78,6 +81,25 @@ public class SshFutures
             @Override
             public Boolean apply(CloseFuture closeFuture) {
                 return closeFuture.isClosed();
+            }
+        });
+    }
+
+    public static ListenableFuture<Boolean> writeFuture(IoWriteFuture writeFuture) {
+        ListenableFuture<IoWriteFuture> adapter = new FutureAdapter<IoWriteFuture>(writeFuture);
+        return Futures.transform(adapter, new Function<IoWriteFuture, Boolean>() {
+            @Override
+            public Boolean apply(IoWriteFuture writeFuture) {
+                return writeFuture.isWritten();
+            }
+        });
+    }
+
+    public static ListenableFuture<Integer> readFuture(IoReadFuture readFuture) {
+        return Futures.transform(new FutureAdapter<IoReadFuture>(readFuture), new Function<IoReadFuture, Integer>() {
+            @Override
+            public Integer apply(IoReadFuture readFuture) {
+                return readFuture.getRead();
             }
         });
     }
