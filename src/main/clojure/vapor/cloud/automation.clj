@@ -37,10 +37,11 @@
         :clojure-jar-path (str home-dir "/.vapor/" (last (cljstr/split (get-clojure-jar) #"/")))})))
 
 (defn memoize-connection
+  "Call f to build a connection, if we don't have one, OR if the one we have is being closed/is closed."
   [f]
   (let [conn (atom nil)]
     (fn [& args]
-      (if-let [c (if (and (not (nil? @conn)) (not (.isClosing @conn))) @conn nil)]
+      (if-let [c (when (and (not (nil? @conn)) (not (.isClosing @conn))) @conn)]
         c
         (let [new-conn (apply f args)]
           (swap! conn (fn [a] new-conn))

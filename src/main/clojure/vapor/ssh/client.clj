@@ -14,7 +14,7 @@
   (:require [vapor.core.futures :refer :all]
             [clojure.java.io :as jio]))
 
-(def *ssh-client*
+(def ssh-client
   "The default SSH client. Use this if you don't want to build your own."
   (delay
     (let [c (SshClient/setUpDefaultClient)]
@@ -48,7 +48,7 @@
 
   Returns an IFuture that resolves when the connection completes."
   ([user address] (connect user address 22))
-  ([user address port] (connect user address 22 @*ssh-client*))
+  ([user address port] (connect user address 22 @ssh-client))
   ([user address port ssh-client]
    (connect-future
      (.connect ssh-client user address port))))
