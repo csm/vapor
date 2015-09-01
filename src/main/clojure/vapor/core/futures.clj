@@ -80,7 +80,6 @@
     (async-transform [this fun]
       (listenable-future (pipe-async f fun)))
     (then! [this fun]
-      (println "then! this is " this)
       (add-listener f fun)
       this)))
 
