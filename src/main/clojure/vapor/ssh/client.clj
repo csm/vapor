@@ -223,7 +223,7 @@
   [^ClientSession connection remote-paths local-path & {:keys [recursive target-is-directory preserve-attributes]}]
   (let [scp (.createScpClient connection)]
     (do-async
-      (.upload scp (into-array String (if (seq? remote-paths) remote-paths [remote-paths])) local-path
+      (.download scp (into-array String (if (seq? remote-paths) remote-paths [remote-paths])) local-path
                (into-array ScpClient$Option
                            (flatten [(if (true? recursive) [ScpClient$Option/Recursive] [])
                                      (if (true? target-is-directory) [ScpClient$Option/TargetIsDirectory] [])

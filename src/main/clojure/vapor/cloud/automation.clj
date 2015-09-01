@@ -1,7 +1,9 @@
 (ns vapor.cloud.automation
   (require [vapor.ssh.client :as ssh]
+           [vapor.cloud.module :as module]
            [vapor.core.futures :refer [>| >>| then!]]
            [vapor.core.futures :as futures]
+           [vapor.core.util :as util]
            [clojure.edn :as edn]
            [clojure.string :as cljstr]
            [clojure.java.io :refer [input-stream resource]]
@@ -12,10 +14,6 @@
            (java.io IOException PushbackReader InputStreamReader ByteArrayInputStream)
            (com.google.common.io ByteStreams)
            (java.security MessageDigest DigestInputStream)))
-
-(defn- get-clojure-jar
-  []
-  (.getPath (.getLocation (.getCodeSource (.getProtectionDomain IPersistentList)))))
 
 (defn- tame-arch
   [os arch]
@@ -62,13 +60,8 @@
         make-vapor-home @(if (= 0 (:exit-status vapor-home-status))
                            (futures/successful {:exit-status 0})
                            (ssh/exec conn (str "mkdir " home-dir "/.vapor")))
-        clojure-jar-exists @(ssh/exec conn (str "stat " home-dir "/.vapor/" (last (cljstr/split (get-clojure-jar) #"/"))))
-        upload-cljar (if (= 0 (:exit-status clojure-jar-exists))
-                       nil
-                       (ssh/upload conn (get-clojure-jar) (str home-dir "/.vapor/")))
         uname-info (uname-reconn conn)]
-    (merge {:home-dir home-dir
-            :clojure-jar-path (str home-dir "/.vapor/" (last (cljstr/split (get-clojure-jar) #"/")))}
+    (merge {:home-dir home-dir}
            uname-info)))
 
 (defn memoize-connection
@@ -90,34 +83,57 @@
   (connect! [this] "Connect to the remote host, if necessary.")
   (close! [this] "Close the current connection.")
   (gather-facts [this] "Gather facts about an instance. instance-info should be a map returned by a
-                        instance-infos implementation of IInventory. Returns a map of facts gathered."))
+                        instance-infos implementation of IInventory. Returns a map of facts gathered.")
+  (run-module [this name opts] "Run the given module."))
+
+(defn- hash-path
+  "Attempt various ways of hashing a file, returning the message digest.
+   Returns a map with {hash-name hash-value}. Hashes tried are sha256, sha1."
+  [conn path]
+  @(>>| (ssh/exec conn (str "sha256sum " path))
+       (fn [r]
+         (if (zero? (:exit-status r))
+           (futures/successful {:sha256 (first (cljstr/split (String. (:stdout r)) #"[ \t\n]"))})
+           (>>| (ssh/exec conn (str "sha1sum " path))
+                (fn [r]
+                  (if (zero? (:exit-status r))
+                    (futures/successful {:sha1 (first (cljstr/split (String. (:stdout r)) #"[ \t\n]"))})
+                    (>| (ssh/exec conn (str "shasum " path))
+                        (fn [r]
+                          (if (zero? (:exit-status r))
+                            {:sha1 (first (cljstr/split (String. (:stdout r)) #"[ \t\n]"))}
+                            {}))))))))))
 
 (defn- upload-module
-  [conn config content]
+  [conn config local-path]
   (let [remote-path (str (:home-dir config) "/.vapor/.tmp_vapor-" (System/currentTimeMillis) "-" (System/nanoTime) ".clj")
-        digest (MessageDigest/getInstance "SHA-256")]
-    @(>>|
-       (ssh/exec conn (str "tee " remote-path) :input (DigestInputStream. content digest))
-       (fn [r] (log/debug "upload result " r)
-         (let [d (cljstr/join (map (partial format "%02x")) (.digest digest))]
-           (>>|
-             (ssh/exec (str "sha256sum " remote-path))))
-         (log/debug "upload stdout:" (when-let [out (:stdout (:result r))] (String. out)))
-         (log/debug "upload stderr:" (when-let [err (:stderr (:result r))] (String. err)))))
-    remote-path))
+        sha256 (util/hash-file local-path "SHA-256")
+        sha1 (util/hash-file local-path "SHA-1")]
+    @(>|
+       (ssh/upload conn local-path remote-path :preserve-attributes true)
+       (fn [_]
+         (println "upload complete")
+         (let [remote-hash (hash-path conn remote-path)]
+           (println "sha256:" sha256 "sha1:" sha1 "remote:" remote-hash)
+           (if (or (= sha256 (:sha256 remote-hash)) (= sha1 (:sha1 remote-hash)))
+             remote-path
+             (throw (Exception. (str "Failed to upload or upload tampered with! Remote hash: " remote-hash)))))))))
 
 (defrecord SshAutomator [config conn]
   IAutomator
   (gather-facts [this]
-    (when-let [content (input-stream (resource "modules/system/gather_facts.clj"))]
-      (let [remote-path (upload-module @conn config content)]
-        @(>|
-          (ssh/exec @conn (str "java -cp " (:clojure-jar-path config) " clojure.main " remote-path "; rm -f " remote-path))
+    (run-module this "core/gather-facts" {}))
+  (run-module
+    [this name opts]
+    (let [local-module (module/module (merge (select-keys config [:os :arch])
+                                             {:name name}
+                                             (select-keys opts [:namespace])))
+          remote-path (upload-module @conn config local-module)]
+      (>| (if (nil? (:args opts))
+            (ssh/exec @conn (str remote-path "; rm -f " remote-path))
+            (ssh/exec @conn (str remote-path "; rm -f " remote-path) :input (prn-str (:args opts))))
           (fn [r]
-            (log/debug r)
-            (log/debug (String. (:stdout r)))
-            (log/debug (String. (:stderr r)))
-            (edn/read (PushbackReader. (InputStreamReader. (ByteArrayInputStream. (:stdout r)))))))))))
+            (edn/read (PushbackReader. (InputStreamReader. (ByteArrayInputStream. (:stdout r))))))))))
 
 (defn ssh-automator
   "Create a SSH based automator"
