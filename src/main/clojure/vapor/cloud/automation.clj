@@ -88,7 +88,12 @@
 
 (defn- hash-path
   "Attempt various ways of hashing a file, returning the message digest.
-   Returns a map with {hash-name hash-value}. Hashes tried are sha256, sha1."
+   Returns a map with {hash-name hash-value}. Hashes tried are sha256, sha1.
+
+   This really doesn't buy us any security, unfortunately, if the remote host
+   is compromised. Since we send the file we want to hash to the server, an
+   adversary could simply intercept that, hash it, and return that hash when
+   we try computing it later."
   [conn path]
   @(>>| (ssh/exec conn (str "sha256sum " path))
        (fn [r]
@@ -129,7 +134,7 @@
                                              {:name name}
                                              (select-keys opts [:namespace])))
           remote-path (upload-module @conn config local-module)]
-      (>| (if (nil? (:args opts))
+      @(>| (if (nil? (:args opts))
             (ssh/exec @conn (str remote-path "; rm -f " remote-path))
             (ssh/exec @conn (str remote-path "; rm -f " remote-path) :input (prn-str (:args opts))))
           (fn [r]
